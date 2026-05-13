@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GRZ'HabitTracker</title>
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --text-color: #334155;
+            --gray-empty: #e2e8f0;
+            --accent: #6366f1; /* Bleu/Indigo pour le calendrier et streak */
+            --red: #ef4444;
+            --green: #10b981;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex; flex-direction: column; align-items: center;
+            margin: 0; padding: 20px; min-height: 100vh;
+            touch-action: manipulation; user-select: none; -webkit-user-select: none;
+        }
+
+        header { width: 100%; max-width: 380px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .icon-btn { font-size: 1.3rem; cursor: pointer; padding: 5px; opacity: 0.7; }
+        h1 { font-size: 1.3rem; margin: 0; font-weight: 800; color: #1e293b; }
+        .logo-grz { color: var(--red); }
+
+        .streak-container { text-align: center; margin-bottom: 15px; }
+        .streak-badge {
+            background: var(--accent); color: white; padding: 6px 18px;
+            border-radius: 50px; font-weight: 600; font-size: 0.9rem;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2);
+        }
+
+        .grid {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+            width: 100%; max-width: 380px;
+        }
+
+        .habit-card {
+            aspect-ratio: 1 / 1; background: white; border-radius: 20px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 10px; text-align: center; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); position: relative; overflow: hidden;
+        }
+
+        .habit-card.completed { color: white; transform: scale(1.03); }
+        .add-card { border: 2px dashed #cbd5e1; background: transparent; font-size: 2rem; color: #94a3b8; }
+
+        .habit-emoji { font-size: 1.6rem; margin-bottom: 4px; z-index: 2; }
+        .habit-name { font-size: 0.75rem; font-weight: 600; line-height: 1.2; z-index: 2; margin-bottom: 4px; }
+        .habit-count { font-size: 0.65rem; font-weight: 800; z-index: 2; opacity: 0.8; }
+
+        .progress-container {
+            position: absolute; bottom: 8px; left: 10px; right: 10px;
+            height: 6px; background: rgba(0,0,0,0.05); border-radius: 10px; overflow: hidden; z-index: 2;
+        }
+        .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s ease; }
+        .completed .progress-container { background: rgba(255,255,255,0.2); }
+        .completed .progress-bar { background: white; }
+
+        /* Modaux et Menus */
+        #context-menu, #settings-modal, #add-menu, #calendar-modal {
+            position: fixed; display: none; background: white;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+            border-radius: 20px; z-index: 1001; overflow: hidden;
+        }
+        
+        #settings-modal, #add-menu, #calendar-modal { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 300px; }
+        #context-menu { width: 160px; }
+
+        .menu-item { padding: 14px 18px; font-size: 0.9rem; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 500; }
+        .menu-item:last-child { border: none; }
+        .destructive { color: var(--red) !important; }
+
+        /* Style du Calendrier */
+        .calendar-header { padding: 15px; font-weight: 800; text-align: center; border-bottom: 1px solid #f1f5f9; background: #f8fafc; text-transform: capitalize; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; padding: 15px; }
+        .calendar-day-label { font-size: 0.6rem; font-weight: 700; text-align: center; color: #94a3b8; padding-bottom: 5px; }
+        .calendar-day { 
+            aspect-ratio: 1; display: flex; align-items: center; justify-content: center; 
+            font-size: 0.75rem; font-weight: 600; border-radius: 50%;
+        }
+        .day-completed { background: var(--accent); color: white; box-shadow: 0 2px 5px rgba(99, 102, 241, 0.4); }
+        .day-empty { opacity: 0; }
+
+        #overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.2); display:none; z-index: 1000; backdrop-filter: blur(2px); }
+        #congrats-msg { margin-top: 25px; font-weight: 700; color: var(--green); opacity: 0; transition: 0.3s; font-size: 0.95rem; }
+        #congrats-msg.visible { opacity: 1; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <header>
+        <div class="icon-btn" onclick="openSettings()">⚙️</div>
+        <h1><span class="logo-grz">GRZ</span>'HabitTracker</h1>
+        <div class="icon-btn" onclick="openCalendar()">📅</div>
+    </header>
+
+    <div class="streak-container">
+        <div class="streak-badge">Série : <span id="streak-count">0</span> jours</div>
+    </div>
+
+    <div class="grid" id="habit-grid"></div>
+    <div id="congrats-msg">Bravo, journée complétée ! ✨</div>
+
+    <div id="overlay" onclick="closeAll()"></div>
+
+    <!-- Calendrier -->
+    <div id="calendar-modal">
+        <div class="calendar-header" id="calendar-month-name">Mois</div>
+        <div class="calendar-grid" id="calendar-days"></div>
+        <div class="menu-item" onclick="closeAll()" style="color: #94a3b8; text-align: center;">Fermer</div>
+    </div>
+
+    <!-- Menus existants -->
+    <div id="add-menu">
+        <div class="menu-item" onclick="prepareHabit('simple')">Habitude simple</div>
+        <div class="menu-item" onclick="prepareHabit('progress')">Objectif chiffré</div>
+        <div class="menu-item" onclick="closeAll()" style="color: #94a3b8; text-align: center;">Annuler</div>
+    </div>
+
+    <div id="settings-modal">
+        <div class="menu-item destructive" onclick="resetBoard()">Vider le plateau</div>
+        <div class="menu-item destructive" onclick="resetStreak()">Reset la série</div>
+        <div class="menu-item" onclick="closeAll()" style="color: #94a3b8; text-align: center;">Fermer</div>
+    </div>
+
+    <div id="context-menu">
+        <div class="menu-item" onclick="renameHabit()">Renommer</div>
+        <div class="menu-item" onclick="changeEmoji()">Emoji</div>
+        <div class="menu-item destructive" onclick="deleteHabit()">Supprimer</div>
+    </div>
+
+    <script>
+        const emojiLibrary = {
+            "💧": ["eau", "boire", "hydrat", "verre"], "🏃": ["sport", "courir", "run", "cardio", "jogging", "vélo"],
+            "🧘": ["medit", "zen", "yoga", "calme", "respirer"], "📚": ["lire", "lecture", "livre", "bouquin"],
+            "😴": ["dodo", "sommeil", "nuit", "dormir"], "💪": ["muscu", "gym", "poids", "fitness", "pompe", "traction"],
+            "🥗": ["manger", "fruit", "legum", "sain", "diet"], "💻": ["code", "dev", "travail", "projet", "pc"],
+            "💰": ["argent", "éco", "budget", "finance"], "🧹": ["ménage", "propre", "ranger", "vaisselle"],
+            "🪥": ["dent", "brosser", "hygiène", "douche"], "📵": ["écran", "téléphone", "social", "insta", "tiktok"]
+        };
+
+        let habits = JSON.parse(localStorage.getItem('grzHabits')) || [];
+        let history = JSON.parse(localStorage.getItem('grzHistory')) || []; 
+        let lastVisit = localStorage.getItem('grzLastVisit') || ""; 
+        let selectedId = null;
+        let pressTimer = null;
+
+        const grid = document.getElementById('habit-grid');
+        const streakDisp = document.getElementById('streak-count');
+        const overlay = document.getElementById('overlay');
+
+        function getTodayStr() {
+            const d = new Date();
+            return `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
+        }
+
+        function initApp() {
+            const today = getTodayStr();
+            if (lastVisit !== today && lastVisit !== "") {
+                habits.forEach(h => { h.completed = false; h.current = 0; });
+            }
+            lastVisit = today;
+            updateStreakDisplay();
+            save();
+            render();
+        }
+
+        function save() {
+            localStorage.setItem('grzHabits', JSON.stringify(habits));
+            localStorage.setItem('grzHistory', JSON.stringify(history));
+            localStorage.setItem('grzLastVisit', lastVisit);
+            updateStreakDisplay();
+        }
+
+        function updateStreakDisplay() {
+            const today = getTodayStr();
+            let count = 0;
+            let checkDate = new Date();
+            if (!history.includes(today)) checkDate.setDate(checkDate.getDate() - 1);
+
+            while (true) {
+                let dStr = `${checkDate.getFullYear()}-${(checkDate.getMonth()+1).toString().padStart(2,'0')}-${checkDate.getDate().toString().padStart(2,'0')}`;
+                if (history.includes(dStr)) { count++; checkDate.setDate(checkDate.getDate() - 1); }
+                else { break; }
+            }
+            streakDisp.innerText = count;
+        }
+
+        // --- GESTION DU CALENDRIER ---
+        function openCalendar() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            
+            const monthName = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            document.getElementById('calendar-month-name').innerText = monthName;
+
+            const daysContainer = document.getElementById('calendar-days');
+            daysContainer.innerHTML = '';
+
+            // Labels jours
+            ['L', 'M', 'M', 'J', 'V', 'S', 'D'].forEach(l => {
+                const label = document.createElement('div');
+                label.className = 'calendar-day-label';
+                label.innerText = l;
+                daysContainer.appendChild(label);
+            });
+
+            // Calculer premier jour et nombre de jours
+            const firstDay = new Date(year, month, 1).getDay();
+            const shift = (firstDay === 0) ? 6 : firstDay - 1; // Ajuster pour que Lundi soit 0
+            const totalDays = new Date(year, month + 1, 0).getDate();
+
+            // Espaces vides
+            for (let i = 0; i < shift; i++) {
+                const empty = document.createElement('div');
+                empty.className = 'calendar-day day-empty';
+                daysContainer.appendChild(empty);
+            }
+
+            // Jours du mois
+            for (let d = 1; d <= totalDays; d++) {
+                const dayEl = document.createElement('div');
+                dayEl.className = 'calendar-day';
+                dayEl.innerText = d;
+
+                const dStr = `${year}-${(month+1).toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`;
+                if (history.includes(dStr)) {
+                    dayEl.classList.add('day-completed');
+                }
+                daysContainer.appendChild(dayEl);
+            }
+
+            document.getElementById('calendar-modal').style.display = 'block';
+            overlay.style.display = 'block';
+        }
+
+        function render() {
+            grid.innerHTML = '';
+            habits.forEach(h => {
+                const card = document.createElement('div');
+                card.className = `habit-card ${h.completed ? 'completed' : ''}`;
+                if(h.completed) card.style.backgroundColor = h.color;
+                
+                let progressHTML = '';
+                let countHTML = '';
+                if(h.type === 'progress') {
+                    const percent = (h.current / h.target) * 100;
+                    countHTML = `<div class="habit-count">${h.current} / ${h.target}</div>`;
+                    progressHTML = `<div class="progress-container"><div class="progress-bar" style="width: ${percent}%"></div></div>`;
+                }
+                card.innerHTML = `<div class="habit-emoji">${h.emoji}</div><div class="habit-name">${h.name}</div>${countHTML}${progressHTML}`;
+                card.onclick = () => handleAction(h.id);
+                card.onmousedown = (e) => startPress(e, h.id);
+                card.ontouchstart = (e) => startPress(e, h.id);
+                card.onmouseup = cancelPress;
+                card.ontouchend = cancelPress;
+                grid.appendChild(card);
+            });
+
+            if(habits.length < 12) {
+                const add = document.createElement('div');
+                add.className = 'habit-card add-card';
+                add.innerText = '+';
+                add.onclick = openAddMenu;
+                grid.appendChild(add);
+            }
+            checkFull();
+        }
+
+        function handleAction(id) {
+            const h = habits.find(x => x.id === id);
+            const today = getTodayStr();
+
+            if(h.type === 'simple') {
+                h.completed = !h.completed;
+                if(h.completed) h.color = `hsla(${Math.random()*360}, 65%, 45%, 1)`;
+            } else {
+                h.current++;
+                if(h.current >= h.target) {
+                    h.completed = true;
+                    if(!h.color) h.color = `hsla(${Math.random()*360}, 65%, 45%, 1)`;
+                }
+                if(h.current > h.target) { h.current = 0; h.completed = false; }
+            }
+            
+            const isFull = habits.length > 0 && habits.every(x => x.completed);
+            if (isFull) { if (!history.includes(today)) history.push(today); }
+            else { history = history.filter(d => d !== today); }
+
+            save(); render();
+        }
+
+        function closeAll() {
+            document.querySelectorAll('#context-menu, #settings-modal, #add-menu, #calendar-modal').forEach(m => m.style.display = 'none');
+            overlay.style.display = 'none';
+        }
+
+        // Autres fonctions système
+        function openAddMenu() { document.getElementById('add-menu').style.display = 'block'; overlay.style.display = 'block'; }
+        function openSettings() { document.getElementById('settings-modal').style.display = 'block'; overlay.style.display = 'block'; }
+        function getEmoji(t) {
+            const low = t.toLowerCase();
+            for (let [e, keys] of Object.entries(emojiLibrary)) { if (keys.some(k => low.includes(k))) return e; }
+            return "🎯";
+        }
+        function prepareHabit(type) {
+            closeAll();
+            const n = prompt("Nom de l'habitude ?");
+            if(!n || !n.trim()) return;
+            let target = 1;
+            if(type === 'progress') {
+                target = parseInt(prompt("Objectif à atteindre (nombre) ?", "5"));
+                if(isNaN(target) || target < 1) return alert("Nombre invalide !");
+            }
+            history = history.filter(d => d !== getTodayStr());
+            habits.push({ id: Date.now(), name: n.trim(), emoji: getEmoji(n), type: type, current: 0, target: target, completed: false, color: '' });
+            save(); render();
+        }
+        function startPress(e, id) {
+            selectedId = id;
+            pressTimer = setTimeout(() => {
+                const t = e.touches ? e.touches[0] : e;
+                const menu = document.getElementById('context-menu');
+                menu.style.top = t.clientY + "px"; menu.style.left = t.clientX + "px";
+                menu.style.display = 'block'; overlay.style.display = 'block';
+            }, 600);
+        }
+        function cancelPress() { clearTimeout(pressTimer); }
+        function renameHabit() {
+            const h = habits.find(x => x.id === selectedId);
+            const n = prompt("Nouveau nom :", h.name);
+            if(n && n.trim()) { h.name = n.trim(); h.emoji = getEmoji(n); save(); render(); }
+            closeAll();
+        }
+        function changeEmoji() {
+            const h = habits.find(x => x.id === selectedId);
+            const e = prompt("Choisir un nouvel emoji :", h.emoji);
+            if(e && e.trim()) { h.emoji = e.trim(); save(); render(); }
+            closeAll();
+        }
+        function deleteHabit() {
+            if(confirm("Supprimer cette habitude ?")) { 
+                habits = habits.filter(x => x.id !== selectedId); 
+                const today = getTodayStr();
+                const isFull = habits.length > 0 && habits.every(x => x.completed);
+                if (isFull) { if(!history.includes(today)) history.push(today); } else { history = history.filter(d => d !== today); }
+                save(); render(); 
+            }
+            closeAll();
+        }
+        function resetBoard() {
+            if(confirm("Vider tout le plateau ? (Historique préservé)")) { habits = []; history = history.filter(d => d !== getTodayStr()); save(); render(); }
+            closeAll();
+        }
+        function resetStreak() { if(confirm("Remettre la série à 0 et effacer l'historique ?")) { history = []; save(); render(); } closeAll(); }
+        function checkFull() {
+            const isFull = habits.length > 0 && habits.every(x => x.completed);
+            document.getElementById('congrats-msg').classList.toggle('visible', isFull);
+        }
+
+        initApp();
+    </script>
+</body>
+</html>
